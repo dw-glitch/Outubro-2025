@@ -695,8 +695,8 @@
         function toggleDay(dayElement) {
             const dayNumber = parseInt(dayElement.textContent);
             
-            // Verifica se é um dia válido (não vazio e não é pausa)
-            if (!dayNumber || dayElement.classList.contains('empty') || dayElement.classList.contains('yellow-period')) {
+            // Verifica se é um dia válido (não vazio)
+            if (!dayNumber || dayElement.classList.contains('empty')) {
                 return;
             }
 
@@ -761,8 +761,8 @@
                     dayElement.classList.add('taken');
                 }
                 
-                // Adiciona evento de clique apenas para dias válidos (não pausa)
-                if (dayNumber && !dayElement.classList.contains('yellow-period')) {
+                // Adiciona evento de clique para todos os dias válidos
+                if (dayNumber) {
                     dayElement.addEventListener('click', () => toggleDay(dayElement));
                 }
             });
