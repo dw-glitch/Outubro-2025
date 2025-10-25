@@ -582,6 +582,119 @@
                 font-size: 7px;
             }
         }
+
+        /* Modal de seleção de categoria */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.35);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            padding: 16px;
+        }
+        .modal-overlay.active {
+            display: flex;
+            animation: fadeIn 180ms ease;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(6px);} to { opacity: 1; transform: translateY(0);} }
+
+        .modal {
+            background: #ffffff;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 420px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+            padding: 16px;
+            border: 1px solid rgba(16,24,40,0.06);
+        }
+
+        .modal-header {
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:12px;
+            margin-bottom:12px;
+        }
+        .modal-title {
+            font-weight:700;
+            color:#111827;
+            font-size:16px;
+        }
+        .modal-close {
+            background:transparent;
+            border:none;
+            font-size:18px;
+            cursor:pointer;
+            color:#6b7280;
+        }
+
+        .categories-grid {
+            display:grid;
+            grid-template-columns:repeat(2,1fr);
+            gap:10px;
+            margin-bottom:12px;
+        }
+
+        .category-btn {
+            display:flex;
+            gap:10px;
+            align-items:center;
+            padding:10px;
+            border-radius:8px;
+            background:#f8fafc;
+            border:1px solid rgba(15,23,42,0.04);
+            cursor:pointer;
+            transition:all 120ms ease;
+            user-select:none;
+        }
+        .category-btn:hover { transform: translateY(-3px); box-shadow: 0 6px 16px rgba(2,6,23,0.06); }
+        .category-btn.selected { outline: 3px solid rgba(99,102,241,0.12); box-shadow: 0 6px 18px rgba(99,102,241,0.08); transform: none; }
+
+        .swatch {
+            width:34px;
+            height:34px;
+            border-radius:6px;
+            flex-shrink:0;
+            border:1px solid rgba(0,0,0,0.06);
+        }
+
+        .category-label {
+            font-weight:600;
+            color:#0f172a;
+            font-size:13px;
+        }
+        .category-desc {
+            font-size:12px;
+            color:#6b7280;
+        }
+
+        .modal-actions {
+            display:flex;
+            gap:8px;
+            justify-content:flex-end;
+            margin-top:6px;
+        }
+        .btn {
+            padding:8px 12px;
+            border-radius:8px;
+            border:none;
+            cursor:pointer;
+            font-weight:600;
+        }
+        .btn.ghost { background:transparent; color:#374151; border:1px solid rgba(55,65,81,0.06); }
+        .btn.primary { background:#4f46e5; color:white; box-shadow: 0 6px 16px rgba(79,70,229,0.12); }
+
+        /* Pequeno destaque de clique no dia */
+        .day.click-effect {
+            transition: transform 140ms ease, box-shadow 140ms ease;
+            transform-origin: center;
+        }
+        .day.click-effect.active {
+            transform: scale(1.03);
+            box-shadow: 0 8px 24px rgba(2,6,23,0.12);
+        }
     </style>
     <script>
         // Configurações para persistência de dados
@@ -687,6 +800,10 @@
                     day.classList.remove('taken');
                 });
                 
+                // remove todas categorias visuais
+                CATEGORY_DEFS.forEach(c => {
+                    document.querySelectorAll('.' + c.className).forEach(el => el.classList.remove(c.className));
+                });
                 console.log('Todos os dados foram limpos');
             }
         }
@@ -770,47 +887,281 @@
             console.log('Calendário inicializado. Dias marcados:', takenDays);
         }
 
-        // Função para exportar dados (opcional)
-        function exportData() {
-            const data = {
-                takenDays: loadTakenDays(),
-                timestamp: new Date().toISOString(),
-                version: '1.0'
+        // categories definitions
+        const CATEGORY_DEFS = [
+            { key: 'red', className: 'red-period', label: '🔴 Precisa camisinha', desc: 'Tomar pílula (precisa usar camisinha)', color: '#ffeaea' },
+            { key: 'green', className: 'green-period', label: '🟢 Protegida', desc: 'Tomar pílula (totalmente protegida)', color: '#e8f5e8' },
+            { key: 'yellow', className: 'yellow-period', label: '🟡 Pausa', desc: 'Pausa (sem tomar, mas ainda protegida)', color: '#fff8e1' },
+            { key: 'pink', className: 'pink-period', label: '🌸 Nova cartela', desc: 'Nova cartela (totalmente protegida)', color: '#f8e6ff' }
+        ];
+
+        // altera o formato do armazenamento para um objeto mais rico, mantendo compatibilidade
+        function loadState() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (!raw) {
+                    // tenta formatos antigos
+                    const old = localStorage.getItem('pilulaTaken') || localStorage.getItem(BACKUP_KEY);
+                    if (old) {
+                        try {
+                            const arr = JSON.parse(old);
+                            if (Array.isArray(arr)) {
+                                const migrated = { takenDays: arr, categories: {}, timestamp: Date.now() };
+                                saveState(migrated);
+                                return migrated;
+                            }
+                        } catch (e) { /* ignore */ }
+                    }
+                    return { takenDays: [], categories: {}, timestamp: Date.now() };
+                }
+                const parsed = JSON.parse(raw);
+                // Se for array (versão antiga), migra
+                if (Array.isArray(parsed)) {
+                    const migrated = { takenDays: parsed, categories: {}, timestamp: Date.now() };
+                    saveState(migrated);
+                    return migrated;
+                }
+                // Caso seja o novo formato, garante campos
+                return {
+                    takenDays: Array.isArray(parsed.takenDays) ? parsed.takenDays : [],
+                    categories: parsed.categories && typeof parsed.categories === 'object' ? parsed.categories : {},
+                    timestamp: parsed.timestamp || Date.now()
+                };
+            } catch (error) {
+                console.warn('Erro ao carregar estado:', error);
+                return { takenDays: [], categories: {}, timestamp: Date.now() };
+            }
+        }
+
+        function saveState(state) {
+            try {
+                const dataToSave = JSON.stringify(state);
+                localStorage.setItem(STORAGE_KEY, dataToSave);
+                localStorage.setItem(BACKUP_KEY, dataToSave);
+                localStorage.setItem(STORAGE_KEY + '_timestamp', Date.now().toString());
+                // verificação simples
+                if (localStorage.getItem(STORAGE_KEY) !== dataToSave) {
+                    throw new Error('Falha na verificação do salvamento');
+                }
+                return true;
+            } catch (error) {
+                console.error('Erro ao salvar estado:', error);
+                try {
+                    localStorage.setItem('calendario_emergency_backup', JSON.stringify(state));
+                } catch (e) { console.error('Falha crítica no salvamento de emergência', e); }
+                return false;
+            }
+        }
+
+        // adaptações das funções existentes para usar o novo state
+        function clearAllData() {
+            if (confirm('Tem certeza que deseja limpar todos os dados marcados?')) {
+                localStorage.removeItem(STORAGE_KEY);
+                localStorage.removeItem(BACKUP_KEY);
+                localStorage.removeItem('pilulaTaken');
+                localStorage.removeItem('calendario_emergency_backup');
+                localStorage.removeItem(STORAGE_KEY + '_timestamp');
+
+                document.querySelectorAll('.day.taken').forEach(day => day.classList.remove('taken'));
+                // remove todas categorias visuais
+                CATEGORY_DEFS.forEach(c => {
+                    document.querySelectorAll('.' + c.className).forEach(el => el.classList.remove(c.className));
+                });
+                console.log('Todos os dados foram limpos');
+            }
+        }
+
+        // Modal DOM (inserido dinamicamente)
+        const modalHtml = `
+            <div class="modal-overlay" id="categoryModal" aria-hidden="true">
+                <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+                    <div class="modal-header">
+                        <div>
+                            <div class="modal-title" id="modalTitle">Editar dia</div>
+                            <div class="category-desc" id="modalSubtitle">Escolha uma categoria e marque se já tomou</div>
+                        </div>
+                        <button class="modal-close" id="modalClose" title="Fechar">✕</button>
+                    </div>
+                    <div class="categories-grid" id="categoriesGrid"></div>
+                    <label style="display:flex;align-items:center;gap:8px;margin-top:6px;">
+                        <input type="checkbox" id="modalTakenCheckbox" /> <span style="font-weight:600;color:#374151;">Marcar como tomado</span>
+                    </label>
+                    <div class="modal-actions">
+                        <button class="btn ghost" id="modalCancel">Cancelar</button>
+                        <button class="btn primary" id="modalSave">Salvar</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.addEventListener('DOMContentLoaded', () => {
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+        });
+
+        // Estado e elemento selecionado atualmente
+        let state = null;
+        let selectedDayElement = null;
+        let selectedCategoryKey = null;
+
+        function openCategoryModal(dayElement) {
+            selectedDayElement = dayElement;
+            const dayNumber = parseInt(dayElement.textContent);
+            state = loadState(); // recarrega estado atual
+            selectedCategoryKey = state.categories[dayNumber] || null;
+
+            const overlay = document.getElementById('categoryModal');
+            const grid = document.getElementById('categoriesGrid');
+            grid.innerHTML = ''; // limpa
+
+            CATEGORY_DEFS.forEach(def => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'category-btn' + (selectedCategoryKey === def.key ? ' selected' : '');
+                btn.dataset.key = def.key;
+                btn.innerHTML = `<div class="swatch" style="background:${def.color}"></div>
+                                 <div style="text-align:left">
+                                    <div class="category-label">${def.label}</div>
+                                    <div class="category-desc">${def.desc}</div>
+                                 </div>`;
+                btn.addEventListener('click', () => {
+                    // marca seleção visual
+                    grid.querySelectorAll('.category-btn').forEach(b => b.classList.remove('selected'));
+                    btn.classList.add('selected');
+                    selectedCategoryKey = def.key;
+                });
+                grid.appendChild(btn);
+            });
+
+            // configurar checkbox de "taken"
+            const takenCheckbox = document.getElementById('modalTakenCheckbox');
+            takenCheckbox.checked = state.takenDays.includes(dayNumber);
+
+            // evento de salvar
+            document.getElementById('modalSave').onclick = () => {
+                applyCategoryToDay(selectedDayElement, selectedCategoryKey, takenCheckbox.checked);
+                closeModal();
             };
-            
+            document.getElementById('modalCancel').onclick = closeModal;
+            document.getElementById('modalClose').onclick = closeModal;
+
+            // destacar dia temporariamente
+            dayElement.classList.add('click-effect', 'active');
+            setTimeout(() => dayElement.classList.remove('active'), 220);
+
+            overlay.classList.add('active');
+            overlay.setAttribute('aria-hidden', 'false');
+
+            // fechar ao clicar fora
+            overlay.onclick = (e) => {
+                if (e.target === overlay) closeModal();
+            };
+
+            // ESC fecha
+            document.addEventListener('keydown', escHandler);
+        }
+
+        function escHandler(e) { if (e.key === 'Escape') closeModal(); }
+
+        function closeModal() {
+            const overlay = document.getElementById('categoryModal');
+            overlay.classList.remove('active');
+            overlay.setAttribute('aria-hidden', 'true');
+            document.removeEventListener('keydown', escHandler);
+            selectedDayElement = null;
+            selectedCategoryKey = null;
+        }
+
+        function applyCategoryToDay(dayElement, categoryKey, markTaken) {
+            const dayNumber = parseInt(dayElement.textContent);
+            state = state || loadState();
+
+            // remove classes de categorias existentes
+            CATEGORY_DEFS.forEach(c => dayElement.classList.remove(c.className));
+
+            // aplica nova categoria
+            if (categoryKey) {
+                const def = CATEGORY_DEFS.find(d => d.key === categoryKey);
+                if (def) dayElement.classList.add(def.className);
+                state.categories[dayNumber] = categoryKey;
+            } else {
+                // se removida, exclui do mapa
+                delete state.categories[dayNumber];
+            }
+
+            // atualiza "taken"
+            if (markTaken) {
+                if (!state.takenDays.includes(dayNumber)) state.takenDays.push(dayNumber);
+                dayElement.classList.add('taken');
+            } else {
+                state.takenDays = state.takenDays.filter(d => d !== dayNumber);
+                dayElement.classList.remove('taken');
+            }
+
+            state.timestamp = Date.now();
+            saveState(state);
+        }
+
+        // Mantém função de export (adaptada)
+        function exportData() {
+            const data = loadState();
             const dataStr = JSON.stringify(data, null, 2);
             const blob = new Blob([dataStr], {type: 'application/json'});
             const url = URL.createObjectURL(blob);
-            
             const link = document.createElement('a');
             link.href = url;
             link.download = 'calendario_pilula_backup.json';
             link.click();
-            
             URL.revokeObjectURL(url);
         }
 
-        // Salva periodicamente para garantir persistência
-        setInterval(() => {
-            const currentData = loadTakenDays();
-            if (currentData.length > 0) {
-                saveTakenDays(currentData);
+        // Inicializa calendário aplicando categorias/taken e habilitando edição via modal
+        function initializeCalendar() {
+            if (!checkStorageCompatibility()) {
+                console.warn('Armazenamento local não disponível. Dados não serão persistidos.');
             }
-        }, 30000); // A cada 30 segundos
 
-        // Inicializa quando a página carrega
+            state = loadState();
+
+            const dayElements = document.querySelectorAll('.day:not(.empty)');
+
+            dayElements.forEach(dayElement => {
+                const dayNumber = parseInt(dayElement.textContent);
+
+                // aplica classes salvas
+                if (state.takenDays && state.takenDays.includes(dayNumber)) {
+                    dayElement.classList.add('taken');
+                }
+                if (state.categories && state.categories[dayNumber]) {
+                    const def = CATEGORY_DEFS.find(d => d.key === state.categories[dayNumber]);
+                    if (def) dayElement.classList.add(def.className);
+                }
+
+                // abre modal ao clicar
+                dayElement.addEventListener('click', () => openCategoryModal(dayElement));
+            });
+
+            console.log('Calendário inicializado. Estado:', state);
+        }
+
+        // salva periodicamente o estado atual (defensivo)
+        setInterval(() => {
+            try {
+                const s = loadState();
+                if (s && (s.takenDays.length > 0 || Object.keys(s.categories).length > 0)) {
+                    saveState(s);
+                }
+            } catch (e) {}
+        }, 30000);
+
         document.addEventListener('DOMContentLoaded', initializeCalendar);
-        
-        // Salva antes de sair da página
         window.addEventListener('beforeunload', () => {
-            const currentData = loadTakenDays();
-            saveTakenDays(currentData);
+            const s = loadState();
+            saveState(s);
         });
 
-        // Funções disponíveis no console para debug
+        // expõe utilitários para debug
         window.calendarioDebug = {
-            loadData: loadTakenDays,
-            saveData: saveTakenDays,
+            loadState: loadState,
+            saveState: saveState,
             clearData: clearAllData,
             exportData: exportData,
             recoverData: recoverData
